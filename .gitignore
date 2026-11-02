@@ -1,0 +1,38 @@
+# macOS and Windows metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+Desktop.ini
+
+# Local editor settings and temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment files and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Dependencies (if development tooling is added)
+node_modules/
+vendor/
+
+# Logs, test reports, and tool caches
+*.log
+.phpunit.cache/
+.phpunit.result.cache
+.phpcs-cache
+coverage/
+playwright-report/
+test-results/
+
+# Generated distribution packages
+*.zip
+/dist/
+/build/
