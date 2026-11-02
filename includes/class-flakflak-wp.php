@@ -20,7 +20,7 @@ final class FlakFlak_WP_Plugin {
 
 	public static function settings() {
 		$saved = get_option( self::OPTION, array() );
-		return wp_parse_args( is_array( $saved ) ? $saved : array(), array( 'embed_code' => '', 'visibility' => 'all', 'post_ids' => array(), 'audience' => 'anyone' ) );
+		return wp_parse_args( is_array( $saved ) ? $saved : array(), array( 'embed_code' => '', 'visibility' => 'all', 'post_ids' => array(), 'audience' => 'logged_in' ) );
 	}
 
 	public static function admin_menu() {
@@ -59,7 +59,7 @@ final class FlakFlak_WP_Plugin {
 	public static function audience_field() {
 		$settings = self::settings();
 		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Who can use the widget in WordPress', 'flakflak-wp' ) . '</legend>';
-		foreach ( array( 'anyone' => __( 'Allow anyone, including anonymous visitors', 'flakflak-wp' ), 'logged_in' => __( 'Only show for logged-in WordPress users', 'flakflak-wp' ) ) as $value => $label ) {
+		foreach ( array( 'logged_in' => __( 'Only show for logged-in WordPress users', 'flakflak-wp' ), 'anyone' => __( 'Allow anyone, including anonymous visitors', 'flakflak-wp' ) ) as $value => $label ) {
 			echo '<label><input type="radio" name="' . esc_attr( self::OPTION ) . '[audience]" value="' . esc_attr( $value ) . '" ' . checked( $settings['audience'], $value, false ) . '> ' . esc_html( $label ) . '</label><br>';
 		}
 		echo '<p class="description">' . esc_html__( 'This controls WordPress visibility only. FlakFlak’s Public/Private mode is separate: anonymous name-only feedback requires a Public project; Private projects still require FlakFlak sign-in and an invitation.', 'flakflak-wp' ) . '</p></fieldset>';
@@ -75,7 +75,8 @@ final class FlakFlak_WP_Plugin {
 		settings_fields( 'flakflak_wp' );
 		do_settings_sections( 'flakflak' );
 		submit_button();
-		echo '</form></div>';
+		echo '</form><hr><h2>' . esc_html__( 'Quick links', 'flakflak-wp' ) . '</h2>';
+		echo '<p><a class="button button-secondary" href="https://app.flakflak.com/" target="_blank" rel="noopener noreferrer">' . esc_html__( 'Open FlakFlak dashboard', 'flakflak-wp' ) . ' <span aria-hidden="true">↗</span></a></p></div>';
 	}
 
 	public static function admin_assets( $hook ) {
@@ -141,7 +142,7 @@ final class FlakFlak_WP_Plugin {
 			add_settings_error( self::OPTION, 'flakflak_visibility', __( 'Choose All pages or Specific pages. Your previous settings were kept.', 'flakflak-wp' ) );
 			return $old;
 		}
-		$audience = isset( $input['audience'] ) ? $input['audience'] : 'anyone';
+		$audience = isset( $input['audience'] ) ? $input['audience'] : 'logged_in';
 		if ( ! in_array( $audience, array( 'anyone', 'logged_in' ), true ) ) {
 			add_settings_error( self::OPTION, 'flakflak_audience', __( 'Choose logged-in WordPress users or anyone. Your previous settings were kept.', 'flakflak-wp' ) );
 			return $old;

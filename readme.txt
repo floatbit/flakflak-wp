@@ -4,7 +4,7 @@ Tags: feedback, collaboration, embed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,11 +16,12 @@ Settings > FlakFlak provides:
 
 * A required field for the FlakFlak embed code.
 * All pages (default), or Specific pages with a comma-separated list of post IDs.
-* All WordPress visitors (default), or only users logged in to WordPress.
+* Only logged-in WordPress users (default), or all visitors.
+* A quick link to the FlakFlak dashboard at app.flakflak.com.
 
 Selected IDs can identify pages, posts, or custom post types. A configured static homepage or posts page can be selected by its page ID. Archives and the latest-posts homepage do not have a selectable post ID; use All pages to include them. The embed is excluded from wp-admin, feeds, 404s, REST requests, and WordPress's own embedded-post views.
 
-The WordPress visitor setting only controls whether the widget is loaded. It is separate from the FlakFlak project’s Public/Private mode: Public projects allow name-only feedback, while Private projects still require FlakFlak sign-in and an invitation. A WordPress login does not sign someone into FlakFlak. Existing installations retain access for all visitors unless you select logged-in users only.
+The WordPress visitor setting only controls whether the widget is loaded. It is separate from the FlakFlak project’s Public/Private mode: Public projects allow name-only feedback, while Private projects still require FlakFlak sign-in and an invitation. A WordPress login does not sign someone into FlakFlak. New installations and settings without a saved visitor choice default to logged-in WordPress users only. A previously saved explicit choice is preserved.
 
 The plugin loads the supplied external script in the footer. Your theme must call wp_footer(). Public/Private mode, accounts, feedback, categories, and attachments are managed by FlakFlak, not this plugin. Both public and private FlakFlak projects are supported.
 
@@ -49,6 +50,10 @@ With WP-CLI available, run from the WordPress installation:
 The checks use in-memory filters plus temporary test options to exercise WordPress’s first-save path. Temporary options are deleted afterward; the plugin is not activated and its saved settings are not changed.
 
 == Changelog ==
+
+= 1.1.1 =
+* Default WordPress visibility to logged-in users; preserve explicit saved choices.
+* Add a quick link to app.flakflak.com in Settings > FlakFlak.
 
 = 1.1.0 =
 * Add WordPress-only visibility controls for logged-in users or all visitors, independently of FlakFlak project access mode.

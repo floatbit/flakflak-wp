@@ -17,9 +17,16 @@ ff_assert(!is_wp_error($local) && $local['api_url'] === 'http://api-flakflak.loc
 foreach (['', '<script>alert(1)</script>', $code.$code, '<script src="javascript:alert(1)" data-site-id="'.$uuid.'"></script>', '<script src="https://embed.flakflak.com/widget.js"></script>', '<img src=x onerror=alert(1)>'.$code] as $bad) {
     ff_assert(is_wp_error(FlakFlak_WP_Plugin::parse_embed($bad)), 'Malformed or unsafe code rejected');
 }
-$valid = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123, 456, 123']);
+$valid = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123, 456, 123', 'audience' => 'anyone']);
 ff_assert($valid['post_ids'] === [123,456], 'Post IDs normalized and deduplicated');
-ff_assert($valid['audience'] === 'anyone', 'Existing installations default to all visitors');
+ff_assert($valid['audience'] === 'anyone', 'Explicit all-visitors selection remains supported');
+$default_choice = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'all']);
+ff_assert($default_choice['audience'] === 'logged_in', 'Omitted visitor selection defaults to WordPress login-only');
+$explicit_saved = $settings;
+unset($settings['audience']);
+ff_assert(FlakFlak_WP_Plugin::settings()['audience'] === 'logged_in', 'Legacy settings without a saved audience default to login-only');
+$settings = $explicit_saved;
+
 $logged_in = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123', 'audience' => 'logged_in']);
 ff_assert($logged_in['audience'] === 'logged_in', 'WordPress login-only choice is accepted');
 ff_assert(FlakFlak_WP_Plugin::sanitize_settings($logged_in) === $logged_in, 'Login-only settings survive repeated sanitization');
@@ -123,6 +130,7 @@ require_once ABSPATH . 'wp-admin/includes/template.php';
 FlakFlak_WP_Plugin::register_settings();
 add_filter('user_has_cap', function($caps) { $caps['manage_options'] = true; return $caps; });
 $GLOBALS['wp_settings_errors'] = [];
+unset($settings['audience']);
 ob_start();
 FlakFlak_WP_Plugin::settings_page();
 $html = ob_get_clean();
@@ -130,6 +138,10 @@ ff_assert(strpos($html, 'action="options.php"') !== false && strpos($html, '_wpn
 ff_assert(strpos($html, 'flakflak-embed-code') !== false && strpos($html, 'required') !== false, 'Required embed field rendered');
 ff_assert(strpos($html, 'value="all"  checked=') !== false || preg_match('/value="all"[^>]*checked/', $html), 'All pages is selected by default');
 ff_assert(strpos($html, 'flakflak-post-ids') !== false, 'Post-ID field rendered');
+ff_assert(preg_match('/value="logged_in"[^>]*checked/', $html), 'Logged-in WordPress audience is selected by default in the form');
+ff_assert(strpos($html, 'href="https://app.flakflak.com/"') !== false && strpos($html, 'Open FlakFlak dashboard') !== false, 'Quick link opens the FlakFlak dashboard');
+ff_assert(strpos($html, 'rel="noopener noreferrer"') !== false, 'Dashboard new-tab link has safe rel attributes');
+
 ff_assert(strpos($html, 'Only show for logged-in WordPress users') !== false && strpos($html, 'Allow anyone, including anonymous visitors') !== false, 'WordPress audience options rendered');
 ff_assert(strpos($html, 'connection-check') === false, 'No connection checker is included');
 
