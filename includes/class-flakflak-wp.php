@@ -20,7 +20,7 @@ final class FlakFlak_WP_Plugin {
 
 	public static function settings() {
 		$saved = get_option( self::OPTION, array() );
-		return wp_parse_args( is_array( $saved ) ? $saved : array(), array( 'embed_code' => '', 'visibility' => 'all', 'post_ids' => array() ) );
+		return wp_parse_args( is_array( $saved ) ? $saved : array(), array( 'embed_code' => '', 'visibility' => 'all', 'post_ids' => array(), 'audience' => 'anyone' ) );
 	}
 
 	public static function admin_menu() {
@@ -32,6 +32,7 @@ final class FlakFlak_WP_Plugin {
 		add_settings_section( 'flakflak_wp_main', '', array( __CLASS__, 'section_intro' ), 'flakflak' );
 		add_settings_field( 'flakflak_embed_code', __( 'Embed code (required)', 'flakflak-wp' ), array( __CLASS__, 'embed_field' ), 'flakflak', 'flakflak_wp_main', array( 'label_for' => 'flakflak-embed-code' ) );
 		add_settings_field( 'flakflak_visibility', __( 'Show FlakFlak on', 'flakflak-wp' ), array( __CLASS__, 'visibility_field' ), 'flakflak', 'flakflak_wp_main' );
+		add_settings_field( 'flakflak_audience', __( 'WordPress visitors', 'flakflak-wp' ), array( __CLASS__, 'audience_field' ), 'flakflak', 'flakflak_wp_main' );
 	}
 
 	public static function section_intro() {
@@ -53,6 +54,15 @@ final class FlakFlak_WP_Plugin {
 		echo '<div id="flakflak-specific-pages" style="margin-top:12px"><label for="flakflak-post-ids">' . esc_html__( 'Post IDs', 'flakflak-wp' ) . '</label><br>';
 		echo '<input id="flakflak-post-ids" name="' . esc_attr( self::OPTION ) . '[post_ids]" type="text" class="regular-text" value="' . esc_attr( implode( ', ', (array) $settings['post_ids'] ) ) . '" placeholder="123, 456, 789" aria-describedby="flakflak-post-ids-help">';
 		echo '<p id="flakflak-post-ids-help" class="description">' . esc_html__( 'Enter a comma-separated list of post IDs. Works with pages, posts, and custom post types.', 'flakflak-wp' ) . '</p></div></fieldset>';
+	}
+
+	public static function audience_field() {
+		$settings = self::settings();
+		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Who can use the widget in WordPress', 'flakflak-wp' ) . '</legend>';
+		foreach ( array( 'anyone' => __( 'Allow anyone, including anonymous visitors', 'flakflak-wp' ), 'logged_in' => __( 'Only show for logged-in WordPress users', 'flakflak-wp' ) ) as $value => $label ) {
+			echo '<label><input type="radio" name="' . esc_attr( self::OPTION ) . '[audience]" value="' . esc_attr( $value ) . '" ' . checked( $settings['audience'], $value, false ) . '> ' . esc_html( $label ) . '</label><br>';
+		}
+		echo '<p class="description">' . esc_html__( 'This controls WordPress visibility only. FlakFlak’s Public/Private mode is separate: anonymous name-only feedback requires a Public project; Private projects still require FlakFlak sign-in and an invitation.', 'flakflak-wp' ) . '</p></fieldset>';
 	}
 
 	public static function settings_page() {
@@ -131,15 +141,31 @@ final class FlakFlak_WP_Plugin {
 			add_settings_error( self::OPTION, 'flakflak_visibility', __( 'Choose All pages or Specific pages. Your previous settings were kept.', 'flakflak-wp' ) );
 			return $old;
 		}
+		$audience = isset( $input['audience'] ) ? $input['audience'] : 'anyone';
+		if ( ! in_array( $audience, array( 'anyone', 'logged_in' ), true ) ) {
+			add_settings_error( self::OPTION, 'flakflak_audience', __( 'Choose logged-in WordPress users or anyone. Your previous settings were kept.', 'flakflak-wp' ) );
+			return $old;
+		}
 		$ids = array();
 		if ( 'specific' === $visibility ) {
-			$text = isset( $input['post_ids'] ) && is_string( $input['post_ids'] ) ? trim( $input['post_ids'] ) : '';
-			if ( ! preg_match( '/\A[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*\z/', $text ) ) {
+			// WordPress may sanitize again in add_option() after update_option().
+			// Accept both submitted text and our already-normalized ID array.
+			$raw = isset( $input['post_ids'] ) ? $input['post_ids'] : '';
+			$parts = array();
+			if ( is_array( $raw ) ) {
+				$parts = $raw;
+			} elseif ( is_string( $raw ) && preg_match( '/\A[1-9][0-9]*(?:\s*,\s*[1-9][0-9]*)*\z/', trim( $raw ) ) ) {
+				$parts = explode( ',', trim( $raw ) );
+			}
+			if ( empty( $parts ) ) {
 				add_settings_error( self::OPTION, 'flakflak_ids', __( 'Enter positive post IDs separated by commas, for example 123, 456. Your previous settings were kept.', 'flakflak-wp' ) );
 				return $old;
 			}
-			foreach ( explode( ',', $text ) as $part ) {
-				$id = filter_var( trim( $part ), FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 1 ) ) );
+			foreach ( $parts as $part ) {
+				$id = false;
+				if ( ( is_int( $part ) || is_string( $part ) ) && preg_match( '/\A[1-9][0-9]*\z/', trim( (string) $part ) ) ) {
+					$id = filter_var( trim( (string) $part ), FILTER_VALIDATE_INT, array( 'options' => array( 'min_range' => 1 ) ) );
+				}
 				if ( false === $id ) {
 					add_settings_error( self::OPTION, 'flakflak_ids', __( 'One of the post IDs is not valid. Your previous settings were kept.', 'flakflak-wp' ) );
 					return $old;
@@ -147,7 +173,7 @@ final class FlakFlak_WP_Plugin {
 				$ids[] = $id;
 			}
 		}
-		return array( 'embed_code' => self::embed_html( $embed ), 'visibility' => $visibility, 'post_ids' => array_values( array_unique( $ids ) ) );
+		return array( 'embed_code' => self::embed_html( $embed ), 'visibility' => $visibility, 'post_ids' => array_values( array_unique( $ids ) ), 'audience' => $audience );
 	}
 
 	public static function should_load() {
@@ -155,6 +181,9 @@ final class FlakFlak_WP_Plugin {
 			return false;
 		}
 		$settings = self::settings();
+		if ( 'logged_in' === $settings['audience'] && ! is_user_logged_in() ) {
+			return false;
+		}
 		if ( is_wp_error( self::parse_embed( $settings['embed_code'] ) ) ) {
 			return false;
 		}

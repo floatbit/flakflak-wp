@@ -8,7 +8,7 @@ function ff_assert($ok, $label) {
 }
 $uuid = '729aedb2-760b-49a4-ab25-f3faec603907';
 $code = '<script src="https://embed.flakflak.com/widget.js" data-site-id="'.$uuid.'" defer></script>';
-$settings = ['embed_code' => $code, 'visibility' => 'all', 'post_ids' => []];
+$settings = ['embed_code' => $code, 'visibility' => 'all', 'post_ids' => [], 'audience' => 'anyone'];
 add_filter('pre_option_flakflak_wp_settings', function() use (&$settings) { return $settings; });
 $embed = FlakFlak_WP_Plugin::parse_embed($code);
 ff_assert(!is_wp_error($embed) && $embed['site_id'] === $uuid, 'Valid production embed accepted');
@@ -19,7 +19,39 @@ foreach (['', '<script>alert(1)</script>', $code.$code, '<script src="javascript
 }
 $valid = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123, 456, 123']);
 ff_assert($valid['post_ids'] === [123,456], 'Post IDs normalized and deduplicated');
-foreach (['', '0', '-1', '123, nope', '123,,456', '1.5', '999999999999999999999999999999'] as $bad) {
+ff_assert($valid['audience'] === 'anyone', 'Existing installations default to all visitors');
+$logged_in = FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123', 'audience' => 'logged_in']);
+ff_assert($logged_in['audience'] === 'logged_in', 'WordPress login-only choice is accepted');
+ff_assert(FlakFlak_WP_Plugin::sanitize_settings($logged_in) === $logged_in, 'Login-only settings survive repeated sanitization');
+ff_assert(FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'all', 'audience' => 'invalid']) === $settings, 'Invalid audience retains prior settings');
+
+// Exercise WordPress's real first-save path, which sanitizes in update_option and add_option.
+$probe = 'flakflak_wp_test_' . wp_generate_uuid4();
+$sanitize_calls = 0;
+$probe_sanitizer = function($value) use (&$sanitize_calls) {
+    $sanitize_calls++;
+    return FlakFlak_WP_Plugin::sanitize_settings($value);
+};
+add_filter('sanitize_option_' . $probe, $probe_sanitizer);
+$GLOBALS['wp_settings_errors'] = [];
+try {
+    ff_assert(update_option($probe, ['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '16425'], false), 'Initial option save succeeds');
+    $first_save = get_option($probe);
+    ff_assert($first_save['visibility'] === 'specific' && $first_save['post_ids'] === [16425], 'First save retains the selected specific post ID');
+    ff_assert($sanitize_calls >= 2, 'First save exercises repeated WordPress sanitization');
+    ff_assert(count(get_settings_errors(FlakFlak_WP_Plugin::OPTION)) === 0, 'Valid first save produces no validation errors');
+    ff_assert(FlakFlak_WP_Plugin::sanitize_settings($first_save) === $first_save, 'Already-normalized settings remain unchanged');
+    ff_assert(update_option($probe, ['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => '123, 456'], false), 'Subsequent save succeeds');
+    ff_assert(get_option($probe)['post_ids'] === [123,456], 'Subsequent save retains selected IDs');
+    delete_option($probe);
+    ff_assert(update_option($probe, ['embed_code' => $code, 'visibility' => 'all'], false), 'Initial all-pages save succeeds');
+    ff_assert(get_option($probe)['visibility'] === 'all' && get_option($probe)['post_ids'] === [], 'All-pages first save remains stable');
+} finally {
+    delete_option($probe);
+    remove_filter('sanitize_option_' . $probe, $probe_sanitizer);
+}
+
+foreach (['', '0', '-1', '123, nope', '123,,456', '1.5', '999999999999999999999999999999', [], [0], [-1], [123, 'nope'], [true], [[123]], ['1.5']] as $bad) {
     ff_assert(FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => $code, 'visibility' => 'specific', 'post_ids' => $bad]) === $settings, 'Invalid IDs retain prior settings');
 }
 ff_assert(FlakFlak_WP_Plugin::sanitize_settings(['embed_code' => '', 'visibility' => 'all']) === $settings, 'Required embed retains prior settings on blank');
@@ -43,6 +75,28 @@ ff_assert(FlakFlak_WP_Plugin::should_load(), 'All-pages mode loads on archives')
 $settings = $valid;
 ff_query('singular', 123);
 ff_assert(FlakFlak_WP_Plugin::should_load(), 'Matching post ID loads');
+$original_user = wp_get_current_user();
+try {
+    $settings['audience'] = 'logged_in';
+    $GLOBALS['current_user'] = new WP_User();
+    ff_assert(!FlakFlak_WP_Plugin::should_load(), 'Logged-out WordPress visitors do not receive a restricted embed');
+    $logged_in_user = new WP_User();
+    $logged_in_user->ID = 987654321;
+    $GLOBALS['current_user'] = $logged_in_user;
+    ff_assert(FlakFlak_WP_Plugin::should_load(), 'Logged-in WordPress visitors receive a matching restricted embed');
+    ff_query('singular', 789);
+    ff_assert(!FlakFlak_WP_Plugin::should_load(), 'Page restrictions still apply to logged-in users');
+    ff_query('singular', 123);
+    $settings['visibility'] = 'all';
+    $GLOBALS['current_user'] = new WP_User();
+    ff_assert(!FlakFlak_WP_Plugin::should_load(), 'Login restriction also applies to All pages');
+    $settings['audience'] = 'anyone';
+    ff_assert(FlakFlak_WP_Plugin::should_load(), 'Anyone mode includes anonymous WordPress visitors');
+} finally {
+    $GLOBALS['current_user'] = $original_user;
+    $settings = $valid;
+}
+
 ff_query('singular', 789);
 ff_assert(!FlakFlak_WP_Plugin::should_load(), 'Unlisted post ID excluded');
 ff_query('archive', 123);
@@ -64,7 +118,7 @@ ff_assert(strpos($tag, 'nonce="keep-me"') !== false, 'Existing nonce preserved')
 ff_assert(FlakFlak_WP_Plugin::script_tag('unchanged', 'another-plugin', '') === 'unchanged', 'Unrelated scripts unchanged');
 $settings['embed_code'] = '';
 ff_assert(!FlakFlak_WP_Plugin::should_load(), 'Unconfigured plugin does not load');
-$settings = ['embed_code' => $code, 'visibility' => 'all', 'post_ids' => []];
+$settings = ['embed_code' => $code, 'visibility' => 'all', 'post_ids' => [], 'audience' => 'anyone'];
 require_once ABSPATH . 'wp-admin/includes/template.php';
 FlakFlak_WP_Plugin::register_settings();
 add_filter('user_has_cap', function($caps) { $caps['manage_options'] = true; return $caps; });
@@ -76,4 +130,7 @@ ff_assert(strpos($html, 'action="options.php"') !== false && strpos($html, '_wpn
 ff_assert(strpos($html, 'flakflak-embed-code') !== false && strpos($html, 'required') !== false, 'Required embed field rendered');
 ff_assert(strpos($html, 'value="all"  checked=') !== false || preg_match('/value="all"[^>]*checked/', $html), 'All pages is selected by default');
 ff_assert(strpos($html, 'flakflak-post-ids') !== false, 'Post-ID field rendered');
-echo $GLOBALS['ff_check_count']." checks passed; no WordPress settings changed.\n";
+ff_assert(strpos($html, 'Only show for logged-in WordPress users') !== false && strpos($html, 'Allow anyone, including anonymous visitors') !== false, 'WordPress audience options rendered');
+ff_assert(strpos($html, 'connection-check') === false, 'No connection checker is included');
+
+echo $GLOBALS['ff_check_count']." checks passed; FlakFlak settings untouched; temporary test options cleaned up.\n";
